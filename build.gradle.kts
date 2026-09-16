@@ -17,6 +17,8 @@ version = "0.1.0"
 dependencies {
     api(libs.parserSdk)
     implementation(libs.jsoup)
+    implementation(libs.okhttp)
+    implementation(libs.ktorClientOkhttp)
 
     testImplementation(libs.parserTestsSdk)
 }
@@ -43,7 +45,7 @@ publishing {
     repositories {
         maven {
             name = "GitHubPackages"
-            url = uri("https://maven.pkg.github.com/campus-mobile/campus-parser-template")
+            url = uri("https://maven.pkg.github.com/campus-mobile/campus-parser-rea")
             credentials {
                 username = project.findProperty("gpr.user")?.toString() ?: System.getenv("GPR_USERNAME")
                 password = project.findProperty("gpr.key")?.toString() ?: System.getenv("GPR_TOKEN")

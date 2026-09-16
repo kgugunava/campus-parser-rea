@@ -18,3 +18,9 @@ dependencies {
     implementation(libs.parserTestsSdk)
     implementation(libs.log4jCore)
 }
+
+tasks.register("printRuntimeClasspath") {
+    doLast {
+        println(sourceSets.getByName("main").runtimeClasspath.asPath)
+    }
+}

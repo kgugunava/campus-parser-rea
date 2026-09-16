@@ -1,4 +1,4 @@
-package ru.campus.parsers.template
+package ru.campus.parsers.rea
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
@@ -7,16 +7,14 @@ import ru.campus.parser.sdk.model.Credentials
 import ru.campus.parser.sdk.model.ParserResult
 import ru.campus.parsers.tests.sdk.dump.createDumpMockHttpClient
 import ru.campus.parsers.tests.sdk.dump.createDumpMockParserApi
-import kotlin.test.Ignore
 import kotlin.test.Test
 import kotlin.test.assertEquals
 
 @OptIn(ExperimentalCoroutinesApi::class)
 class DumpParserTest {
-    @Ignore
     @Test
     fun success() = runTest {
-        val collector = TemplateParser(
+        val collector = ReaParser(
             credentials = Credentials("", ""),
             httpClient = createDumpMockHttpClient(),
             parserApi = createDumpMockParserApi(),
