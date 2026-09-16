@@ -87,8 +87,6 @@ class ReaParser @JvmOverloads constructor(
         baseUrl = parserApiBaseUrl
     ),
     private val dateProvider: DateProvider = createDefaultDateProvider(),
-    // ВРЕМЕННО: ограничение количества групп для тестового прогона — убрать перед сдачей задания.
-    private val groupsLimit: Int? = null,
 ) : BaseParser(parserApi) {
     override val isWithoutSchedule: Boolean = false
 
@@ -106,27 +104,10 @@ class ReaParser @JvmOverloads constructor(
         return coroutineScope {
             val groupsPromise = async { groupsCollector.collectEntities() }
 
-            val allGroups: List<Entity> = groupsPromise.await()
-            val groups: List<Entity> = if (groupsLimit != null) {
-                allGroups.take(groupsLimit)
-            } else {
-                allGroups
-            }
-
+            val groups: List<Entity> = groupsPromise.await()
             val currentDate: LocalDate = dateProvider.getCurrentDateTime().date
 
-            val successfulGroupsPromise = async {
-                parallelProcessing(groups, description = "Groups processing") { group ->
-                    processEntity(
-                        scheduleCollector = groupsScheduleCollector,
-                        entity = group,
-                        currentDate = currentDate,
-                        intervals = emptyList()
-                    )
-                }
-            }
-
-            val successfulGroups: List<ProcessedEntity> = successfulGroupsPromise.await()
+            val successfulGroups: List<ProcessedEntity> = processGroupsWithDeferredRetry(groups, currentDate)
             val savedSchedules: Sequence<SavedSchedule> = successfulGroups.asSequence().map { it.savedSchedule }
 
             ParserResult(
@@ -139,6 +120,50 @@ class ReaParser @JvmOverloads constructor(
                 savedSchedules = savedSchedules.toList()
             )
         }
+    }
+
+    /**
+     * Группа, не обработавшаяся с первого раза, не теряется сразу — откладывается на конец очереди
+     * и пробуется ещё раз ПОСЛЕ того, как остальные группы уже обработаны, а не сразу же.
+     *
+     * Раньше временную неудачу (например, у сайта был плохой момент именно тогда, когда до этой
+     * группы дошла очередь) лечили общей блокирующей передышкой — но контрольные прогоны показали,
+     * что она не коррелирует с реальным восстановлением сайта, а просто держит В ПРОСТОЕ вообще ВСЕ
+     * группы, даже те, у которых и так всё было в порядке (см. KDoc [ReaGroupScheduleCollector]).
+     * Отложенный повтор — точечный: не мешает остальным группам, а "время на восстановление" для
+     * неудачной берётся не из пустого ожидания, а как побочный эффект полезной работы над остальными
+     * ~29 группами (при нашей скорости — это реально несколько минут, достаточно, чтобы пережить
+     * короткий сбой вроде временной проблемы с сетью). Вторая попытка — одна: если группа не
+     * обработалась и в этот раз, она окончательно уходит в ошибку, а не крутится по кругу бесконечно.
+     */
+    private suspend fun processGroupsWithDeferredRetry(
+        groups: List<Entity>,
+        currentDate: LocalDate,
+    ): List<ProcessedEntity> {
+        val firstPass: List<ProcessedEntity> = parallelProcessing(groups, description = "Groups processing") { group ->
+            processEntity(
+                scheduleCollector = groupsScheduleCollector,
+                entity = group,
+                currentDate = currentDate,
+                intervals = emptyList()
+            )
+        }
+
+        val succeededEntities: Set<Entity> = firstPass.map { it.savedEntity.entity }.toSet()
+        val deferredGroups: List<Entity> = groups.filterNot { it in succeededEntities }
+        if (deferredGroups.isEmpty()) return firstPass
+
+        logger.info("Повторная попытка в конце очереди для {} групп, не обработавшихся с первого раза", deferredGroups.size)
+        val secondPass: List<ProcessedEntity> = parallelProcessing(deferredGroups, description = "Groups retry") { group ->
+            processEntity(
+                scheduleCollector = groupsScheduleCollector,
+                entity = group,
+                currentDate = currentDate,
+                intervals = emptyList()
+            )
+        }
+
+        return firstPass + secondPass
     }
 
     private suspend fun processEntity(

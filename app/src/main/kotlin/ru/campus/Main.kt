@@ -13,7 +13,6 @@ suspend fun main() {
     val parser = ReaParser(
         credentials = Credentials("", ""),
         parserApi = createDumpRequestsParserApi(dumpDirName = "app/dump"),
-        groupsLimit = 30, // ВРЕМЕННО — убрать перед сдачей задания
     )
     val result: ParserResult = parser.parse()
     parser.logger.error("errors: {}", result.errorsCount)
